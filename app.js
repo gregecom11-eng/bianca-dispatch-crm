@@ -4,6 +4,13 @@ const key = "bianca_dispatch_trips_v3";
 const cfgKey = "bianca_sync_cfg_v1";
 const $ = (id) => document.getElementById(id);
 const money = (n) => `$${Number(n || 0).toFixed(2)}`;
+const esc = (value) => String(value ?? "").replace(/[&<>"']/g, (ch) => ({
+  "&": "&amp;",
+  "<": "&lt;",
+  ">": "&gt;",
+  '"': "&quot;",
+  "'": "&#039;",
+}[ch]));
 
 let supabase = null;
 let tripsCache = [];
@@ -65,12 +72,40 @@ function matchesFilter(t,f){ const target = `${t.passenger} ${t.partner} ${t.pic
 function resetForm(){ ["pickupAt","affiliateTripId","partner","passenger","phone","pickup","dropoff","driver","revenue","cost"].forEach(id => $(id).value = ""); $("vehicleClass").value = "SUV"; $("status").value = "new"; $("jobType").value = "point_to_point"; $("editId").value = ""; $("save").textContent = "Save Trip"; }
 function tripFromForm(){ return { id: $("editId").value || uid(), pickupAt: $("pickupAt").value, affiliateTripId: $("affiliateTripId").value, partner: $("partner").value, passenger: $("passenger").value, phone: $("phone").value, vehicleClass: $("vehicleClass").value, jobType: $("jobType").value, pickup: $("pickup").value, dropoff: $("dropoff").value, driver: $("driver").value, status: $("status").value, revenue: Number($("revenue").value || 0), cost: Number($("cost").value || 0) }; }
 
+function statusLabel(status) {
+  return String(status || "new").replaceAll("_", " ");
+}
+
 function render() {
   const f = currentFilters();
   const filtered = tripsCache.filter(t => matchesFilter(t, f));
   const tbody = $("rows"); tbody.innerHTML = "";
   let rev = 0, cost = 0;
-  filtered.forEach(t => { rev += Number(t.revenue || 0); cost += Number(t.cost || 0); const profit = t.revenue - t.cost; const tr = document.createElement("tr"); tr.innerHTML = `<td>${t.pickupAt || ""}</td><td>${t.passenger || ""}</td><td>${t.pickup || ""} → ${t.dropoff || ""}</td><td>${t.driver || ""}</td><td>${t.status || "new"}</td><td>${t.partner || ""}</td><td>${money(t.revenue)}</td><td>${money(t.cost)}</td><td>${money(profit)}</td><td><button data-edit="${t.id}">Edit</button> <button data-del="${t.id}">Delete</button></td>`; tbody.appendChild(tr); });
+  if (!filtered.length) {
+    const tr = document.createElement("tr");
+    tr.innerHTML = `<td class="empty-row" colspan="10">No trips match this view yet.</td>`;
+    tbody.appendChild(tr);
+  }
+  filtered.forEach(t => {
+    rev += Number(t.revenue || 0);
+    cost += Number(t.cost || 0);
+    const profit = t.revenue - t.cost;
+    const status = t.status || "new";
+    const tr = document.createElement("tr");
+    tr.innerHTML = `
+      <td>${esc(t.pickupAt || "")}</td>
+      <td><div class="passenger">${esc(t.passenger || "Unassigned")}</div><div class="metric-note">${esc(t.phone || "")}</div></td>
+      <td class="route-cell">${esc(t.pickup || "")}<br>&rarr; ${esc(t.dropoff || "")}</td>
+      <td>${esc(t.driver || "")}</td>
+      <td><span class="status-pill status-${esc(status)}">${esc(statusLabel(status))}</span></td>
+      <td>${esc(t.partner || "")}</td>
+      <td class="money">${money(t.revenue)}</td>
+      <td class="money">${money(t.cost)}</td>
+      <td class="money">${money(profit)}</td>
+      <td><button class="btn-quiet" data-edit="${esc(t.id)}">Edit</button> <button class="btn-quiet btn-danger" data-del="${esc(t.id)}">Delete</button></td>
+    `;
+    tbody.appendChild(tr);
+  });
   $("kTrips").textContent = filtered.length; $("kRevenue").textContent = money(rev); $("kCost").textContent = money(cost); $("kProfit").textContent = money(rev - cost);
   tbody.querySelectorAll("button[data-del]").forEach(btn => btn.onclick = async () => { await deleteTrip(btn.dataset.del); tripsCache = await listTrips(); render(); });
   tbody.querySelectorAll("button[data-edit]").forEach(btn => btn.onclick = () => { const t = tripsCache.find(x => x.id === btn.dataset.edit); if (!t) return; Object.assign($("editId"),{value:t.id}); $("pickupAt").value=t.pickupAt||""; $("affiliateTripId").value=t.affiliateTripId||""; $("partner").value=t.partner||""; $("passenger").value=t.passenger||""; $("phone").value=t.phone||""; $("vehicleClass").value=["SUV","Sedan","Sprinter"].includes(t.vehicleClass)?t.vehicleClass:"SUV"; $("jobType").value=t.jobType||"point_to_point"; $("pickup").value=t.pickup||""; $("dropoff").value=t.dropoff||""; $("driver").value=t.driver||""; $("status").value=t.status||"new"; $("revenue").value=t.revenue||0; $("cost").value=t.cost||0; $("save").textContent="Update Trip"; });
